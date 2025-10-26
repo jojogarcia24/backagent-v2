@@ -1,47 +1,37 @@
+import { withCors } from "./_cors.js";
 import { Client } from "pg";
-import rules from "../../rules_seed.json" assert { type: "json" };
+import fs from "fs/promises";
+import path from "path";
 
-export async function handler() {
+export const handler = withCors(async () => {
   const client = new Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
+  try {
+    const seedPath = path.join(process.cwd(), "rules_seed.json");
+    const raw = await fs.readFile(seedPath, "utf-8");
+    const rules = JSON.parse(raw); // expect array of items with { state, category, yearMin, yearMax, name, description, docType, conditions }
 
-  await client.query("BEGIN");
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS rule_scopes(
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      state TEXT, category TEXT, year_min INT, year_max INT
-    );
-    CREATE TABLE IF NOT EXISTS rules(
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      scope_id UUID REFERENCES rule_scopes(id) ON DELETE CASCADE,
-      name TEXT, description TEXT, doc_type TEXT, conditions JSONB, created_at TIMESTAMP DEFAULT now()
-    );
-  `);
-
-  for (const r of rules) {
-    const { state, category, name, description, docType, yearMin, yearMax, conditions } = r;
-    const scope = await client.query(
-      `INSERT INTO rule_scopes (state, category, year_min, year_max)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT DO NOTHING
-       RETURNING id`,
-      [state, category, yearMin ?? null, yearMax ?? null]
-    );
-    const scopeId = scope.rows[0]?.id
-      ?? (await client.query(
-           `SELECT id FROM rule_scopes WHERE state=$1 AND category=$2 AND
-              COALESCE(year_min,-1)=COALESCE($3,-1) AND COALESCE(year_max,-1)=COALESCE($4,-1)`,
-           [state, category, yearMin ?? null, yearMax ?? null]
-         )).rows[0].id;
-
-    await client.query(
-      `INSERT INTO rules(scope_id,name,description,doc_type,conditions)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [scopeId, name, description ?? null, docType ?? null, conditions ?? {}]
-    );
+    let inserted = 0;
+    await client.query("BEGIN");
+    for (const r of rules) {
+      const scope = await client.query(
+        `INSERT INTO rule_scopes (state, category, year_min, year_max)
+         VALUES ($1,$2,$3,$4) RETURNING id`,
+        [r.state || null, r.category || null, r.yearMin || null, r.yearMax || null]
+      );
+      await client.query(
+        `INSERT INTO rules (scope_id, name, description, doc_type, conditions)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [scope.rows[0].id, r.name, r.description || null, r.docType || null, r.conditions || {}]
+      );
+      inserted++;
+    }
+    await client.query("COMMIT");
+    return { statusCode: 200, body: JSON.stringify({ ok: true, count: inserted }) };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    return { statusCode: 500, body: JSON.stringify({ ok: false, error: e.message }) };
+  } finally {
+    await client.end();
   }
-
-  await client.query("COMMIT");
-  await client.end();
-  return { statusCode: 200, body: JSON.stringify({ ok: true, count: rules.length }) };
-}
+});
