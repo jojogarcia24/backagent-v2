@@ -1,6 +1,7 @@
+import { withCors } from "./_cors.js";
 import jwt from "jsonwebtoken";
 
-export async function handler(event) {
+export const handler = withCors(async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
   const apiKey = event.headers["x-api-key"];
@@ -13,4 +14,4 @@ export async function handler(event) {
 
   const token = jwt.sign({ sub: userId, email }, process.env.JWT_SECRET, { expiresIn: "30m" });
   return { statusCode: 200, body: JSON.stringify({ token }) };
-}
+});
