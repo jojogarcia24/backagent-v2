@@ -1,6 +1,8 @@
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["pg", "@aws-sdk/client-s3", "jsonwebtoken", "pdfkit", "openai"]
+  external_node_modules = ["pg", "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "jsonwebtoken", "pdfkit", "openai"]
+  # ⬇️ This makes Netlify bundle the seed file so the function can read it at runtime
+  included_files = ["rules_seed.json"]
 
 [build]
   publish = "."
