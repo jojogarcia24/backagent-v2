@@ -1,9 +1,26 @@
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["pg", "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "jsonwebtoken", "pdfkit", "openai"]
-  # ⬇️ This makes Netlify bundle the seed file so the function can read it at runtime
+  external_node_modules = [
+    "pg",
+    "@aws-sdk/client-s3",
+    "@aws-sdk/s3-request-presigner",
+    "jsonwebtoken",
+    "pdfkit",
+    "openai"
+  ]
+  # Bundle this file so functions can read it at runtime
   included_files = ["rules_seed.json"]
 
 [build]
   publish = "."
   functions = "netlify/functions"
+
+# Global CORS headers for all serverless functions (belt-and-suspenders).
+# Your function code also sets CORS on every response.
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "authorization, content-type"
+    Access-Control-Max-Age = "86400"
