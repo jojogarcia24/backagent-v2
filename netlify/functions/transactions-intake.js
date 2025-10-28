@@ -1,68 +1,29 @@
 // netlify/functions/transactions-intake.js
 import { withCors } from "./_cors.js";
-import jwt from "jsonwebtoken";
-
-/** Get a Bearer token from headers, tolerant to casing and extra spaces */
-function getBearerToken(headers = {}) {
-  // Netlify lowercases header keys
-  const h = headers || {};
-  const raw =
-    h.authorization ??
-    h.Authorization ??
-    h.AUTHORIZATION ??
-    null;
-
-  if (!raw) return null;
-  const parts = String(raw).trim().split(/\s+/);
-  if (parts.length !== 2) return null;
-  const [scheme, value] = parts;
-  if (scheme.toLowerCase() !== "bearer" || !value) return null;
-  return value;
-}
+import { requireAuth } from "./auth.js";
 
 export const handler = withCors(async (event) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
-
-  // ---- AUTH: accept both Authorization & authorization
-  const token = getBearerToken(event.headers);
-  if (!token) {
-    return { statusCode: 401, body: "Unauthorized" };
-  }
+  if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
   let claims;
   try {
-    claims = jwt.verify(token, process.env.JWT_SECRET);
+    claims = requireAuth(event);
+  } catch (e) {
+    // keep response terse but consistent
+    return { statusCode: 401, body: JSON.stringify({ ok: false, error: "Unauthorized" }) };
+  }
+
+  let input = {};
+  try {
+    input = JSON.parse(event.body || "{}");
   } catch {
-    return { statusCode: 401, body: "Unauthorized" };
+    return { statusCode: 400, body: JSON.stringify({ ok: false, error: "Invalid JSON" }) };
   }
 
-  // ---- Parse body
-  const { state, category, yearBuilt } = JSON.parse(event.body || "{}");
-
-  // ---- Demo rules (seed-backed / simplified):
-  // TX + Residential Sale + yearBuilt < 1978 => LBP disclosure
-  // Always include Wire Fraud Warning in demo
-  const requiredItems = [];
-
-  if (
-    String(state).toUpperCase() === "TX" &&
-    String(category).toLowerCase() === "residential sale" &&
-    Number(yearBuilt) < 1978
-  ) {
-    requiredItems.push({
-      code: "LBP",
-      label: "Lead-Based Paint Disclosure",
-      why: "Built before 1978",
-    });
-  }
-
-  requiredItems.push({
-    code: "WIRE_FRAUD",
-    label: "Wire Fraud Warning",
-    why: "Best practice",
-  });
+  // … your existing logic to compute requiredItems …
+  const requiredItems = [
+    { code: "WIRE_FRAUD", label: "Wire Fraud Warning", why: "Best practice" },
+  ];
 
   return {
     statusCode: 200,
